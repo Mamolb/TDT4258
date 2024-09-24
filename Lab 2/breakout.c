@@ -50,10 +50,9 @@ typedef enum _gameState
 } GameState;
 GameState currentState = Running;
 
-
 //2D array of blocks //Think we should have this in main instead
 Block blocksList[10][number_of_y_blocks]; //This takes some mem but it is the easiest way to keep track of the blocks
-
+int BarPosition = 0;
 /***
  * Here follow the C declarations for our assembly functions
  */
@@ -204,29 +203,15 @@ void draw_ball()
 //Draw blocks I guess 
 void draw_playing_field()
 {
-    // Define a set of colors to cycle through (excluding white)
-    unsigned short colors[] = {blue, red, green, black, orange, light_blue};
-    int num_colors = sizeof(colors) / sizeof(colors[0]);
-    int color_index = 0;
     for (int x = number_of_x_blocks - n_cols; x < number_of_x_blocks; x++)
     {
         for (int y = 0; y < number_of_y_blocks; y++)
         {
-            Block *block = &blocksList[x][y];  // Get the block
-            block->pos_x = x * block_width;    // Set the x position
-            block->pos_y = y * block_height;   // Set the y position 
-            // Assign the color, alternating for each row
-            block->color = colors[color_index];
-
-            // Increment and wrap the color index to ensure the next block gets a different color
-            color_index = (color_index + 1) % num_colors;
-            if (color_index > 5)
+            if (blocksList[x][y].destroyed == 0)
             {
-                color_index = 1;
+                DrawBlock(blocksList[x][y].pos_x, blocksList[x][y].pos_y, block_width, block_height, blocksList[x][y].color);
             }
             
-            // Draw the block with the assigned color
-            DrawBlock(block->pos_x, block->pos_y, block_width, block_height, block->color);
         }
     }
     return;
@@ -251,9 +236,34 @@ void update_game_state()
 void update_bar_state()
 {
     int remaining = 0;
+    int reedValue = 0;
     // TODO: Read all chars in the UART Buffer and apply the respective bar position updates
+        // Hint: This is draining the UART buffer
+    do
+    {
+        unsigned long long out = ReadUart();
+        if (!(out & 0x8000))
+        {
+            // not valid - abort reading
+            return;
+        }
+        remaining = (out & 0xFF0000) >> 4;
+        reedValue = (out & 0x000000FF);
+        if (reedValue == 0x00000077)
+        {
+            //GoUp //TODO: Need to check if we are over max height 
+            BarPosition -= 15;
+        }
+        if (reedValue == 0x00000073)
+        {
+            //Go down
+            BarPosition += 15;
+        }
+    } while (remaining > 0);
+
     // HINT: w == 77, s == 73
     // HINT Format: 0x00 'Remaining Chars':2 'Ready 0x80':2 'Char 0xXX':2, sample: 0x00018077 (1 remaining character, buffer is ready, current character is 'w')
+
 }
 
 void write(char *str)
@@ -263,8 +273,8 @@ void write(char *str)
 
 void play()
 {
-    ClearScreen();
     // HINT: This is the main game loop
+    ClearScreen();
     while (1)
     {
         update_game_state();
@@ -275,7 +285,9 @@ void play()
         }
         draw_playing_field();
         draw_ball();
-        DrawBar(98); // TODO: replace the constant value with the current position of the bar
+        DrawBar(BarPosition); // TODO: replace the constant value with the current position of the bar
+        delay(2000000); // Insert delay here (500ms for observation purposes)
+        ClearScreen();
     }
     if (currentState == Won)
     {
@@ -315,11 +327,48 @@ void wait_for_start()
     // TODO: Implement waiting behaviour until the user presses either w/s
 }
 
+void init_blockList()
+{
+    // Define a set of colors to cycle through (excluding white)
+    unsigned short colors[] = {blue, red, green, black, orange, light_blue};
+    int num_colors = sizeof(colors) / sizeof(colors[0]);
+    int color_index = 0;
+    for (int x = number_of_x_blocks - n_cols; x < number_of_x_blocks; x++)
+    {
+        for (int y = 0; y < number_of_y_blocks; y++)
+        {
+            //Init all blocks with correct values
+            blocksList[x][y].pos_x = x * block_width;    // Set the x position
+            blocksList[x][y].pos_y = y * block_height;   // Set the y position
+            blocksList[x][y].deleted = 0;
+            blocksList[x][y].destroyed = 0; 
+            // Assign the color, alternating for each row
+            blocksList[x][y].color = colors[color_index];
+            // Increment and wrap the color index to ensure the next block gets a different color
+            color_index = (color_index + 1) % num_colors;
+            if (color_index > 5)
+            {
+                color_index = 1;
+            }
+            //DrawBlock(block->pos_x, block->pos_y, block_width, block_height, block->color);
+        }
+    }
+    return;
+}
+
+void delay(volatile unsigned int count) {
+    while (count--) {
+        // Busy-wait loop to consume time
+    }
+}
+
 int main(int argc, char *argv[])
 {
     //ClearScreen();
-
     // HINT: This loop allows the user to restart the game after loosing/winning the previous game
+    init_blockList();
+    //Init Bar Position
+    BarPosition = 98;
     while (1)
     {
         //Under follows real code LOL
