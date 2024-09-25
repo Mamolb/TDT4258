@@ -24,6 +24,15 @@ char font8x8[128][8];        // DON'T TOUCH THIS - this is a forward declaration
  */
 const int block_height = 15;
 const int block_width = 15;
+const int ball_height = 7;
+const int ball_width = 7;
+const int ball_speed = 10;
+
+const unsigned int checkRange = 30; //TODO: Change to size / speed or smth 
+#define BAR_HIT_CHECK_RANGE checkRange
+#define BLOCK_HIT_CHECK_RANGE  (width - n_cols * block_width - checkRange)
+#define WALL_HIT_CHECK_RANGE_MIN checkRange
+#define WALL_HIT_CHECK_RANGE_MAX (height - checkRange)
 #define number_of_x_blocks (int)(320 / 15) //this dont make sense
 #define number_of_y_blocks (int)(240 / 15)
 /***
@@ -50,9 +59,39 @@ typedef enum _gameState
 } GameState;
 GameState currentState = Running;
 
+
+typedef struct _ball
+{
+    unsigned int pos_x;
+    unsigned int pos_y;
+    unsigned int degree;
+    unsigned int r_vector;
+    unsigned int color;
+} BallBlock;
+
+typedef struct _hitBox
+{
+    unsigned int x_min;
+    unsigned int x_max;
+    unsigned int y_min;
+    unsigned int y_max;
+} HitBox;
+
+typedef enum _gameregion
+{
+    CloseToWall,
+    CloseToBlocks,
+    CloseToBar,
+    CloseToWallAndBar,
+    CloseToWallAndBlock,
+    NotClose,
+}GameRegion;
+//Globals that represent the gamepicture
 //2D array of blocks //Think we should have this in main instead
 Block blocksList[10][number_of_y_blocks]; //This takes some mem but it is the easiest way to keep track of the blocks
 int BarPosition = 0;
+BallBlock ball;
+GameRegion currentRegion = NotClose;
 /***
  * Here follow the C declarations for our assembly functions
  */
@@ -198,7 +237,7 @@ asm("ReadUart:\n\t"
 // TODO: Implement the C functions below
 void draw_ball()
 {
-    DrawBlock(10, 120, 7, 7, black );
+    DrawBlock(ball.pos_x, ball.pos_y, ball_width, ball_height, ball.color );
 }
 //Draw blocks I guess 
 void draw_playing_field()
@@ -217,6 +256,41 @@ void draw_playing_field()
     return;
 }
 
+void update_game_region()
+{
+    //Check ball position and update region
+     if (ball.pos_y > WALL_HIT_CHECK_RANGE_MAX || ball.pos_y < WALL_HIT_CHECK_RANGE_MIN)
+    {
+        //Check are we also close to wall or bar
+        if (ball.pos_x > BAR_HIT_CHECK_RANGE)
+        {
+            currentRegion = CloseToWallAndBar;
+            return;
+        }
+        else if (ball.pos_x < BLOCK_HIT_CHECK_RANGE)
+        {
+            currentRegion = CloseToWallAndBlock;
+            return;
+        }
+        else
+        {
+            currentRegion = CloseToWall;
+            return;
+        }
+    }
+    if (ball.pos_x < BAR_HIT_CHECK_RANGE)
+    {
+        //We are close to bar
+        currentRegion = CloseToBar;
+        return;   
+    }
+    else if (ball.pos_x > BLOCK_HIT_CHECK_RANGE)
+    {
+        //Close to block
+        currentRegion = CloseToBlocks;
+        return;
+    }
+}
 
 void update_game_state()
 {
@@ -226,11 +300,72 @@ void update_game_state()
     }
 
     // TODO: Check: game won? game lost?
-
+    if (ball.pos_x == width)
+    {
+        currentState = Won; 
+    }
+    if(ball.pos_x == 0)
+    {
+        currentState = Lost;
+    }
     // TODO: Update balls position and direction
-
+    double radians = ball.degree * (3.14) / 180.0;
+    ball.pos_x += ball_speed * sin(radians);
+    ball.pos_y += ball_speed * cos(radians);
     // TODO: Hit Check with Blocks
     // HINT: try to only do this check when we potentially have a hit, as it is relatively expensive and can slow down game play a lot
+    //Only check when we are in a region where a hit can happen
+    switch (currentRegion)
+    {
+    case CloseToBar:
+        //Check If we have hit bar
+        check_if_barHit();
+        break;
+    case CloseToBlocks:
+        //Check if we have hit Block
+    case CloseToWall:
+        //Check if we have hit wall
+    case CloseToWallAndBar:
+        //Check if we have hit Wall or Bar
+    case CloseToWallAndBlock:
+        //Check if we have hit Wall or block.
+    default:
+        break;
+    }
+    return;
+    
+}
+
+void check_if_barHit()
+{
+    //TODO: Maybe not define here IDK 
+    HitBox barHitBox;
+    barHitBox.x_max = 15;
+    barHitBox.x_min = 0;
+    barHitBox.y_max = BarPosition;
+    barHitBox.y_min = BarPosition + 45;
+    //HitBoxBall
+    HitBox ballHitBox;
+    ballHitBox.x_max = ball.pos_x + 7;
+    ballHitBox.x_min = ball.pos_x;
+    ballHitBox.y_min = ball.pos_y;
+    ballHitBox.y_max = ball.pos_y + 7;
+    //Start simple if you hit bar we will just bounce it back   
+
+    //Chatty code
+    //TODO : Fix so that we also check Y position
+    /*
+    if((ballHitBox.x_min <= barHitBox.x_max && ballHitBox.y_max >= barHitBox.y_min) ||
+      (ballHitBox.x_min <= barHitBox.x_max && ballHitBox.y_min >= barHitBox.y_max))
+      {
+        ball.degree = 90;
+      }
+    */
+     if(ballHitBox.x_min <= barHitBox.x_max)
+      {
+        ball.degree = 90;
+      }
+    return;
 }
 
 void update_bar_state()
@@ -277,6 +412,7 @@ void play()
     ClearScreen();
     while (1)
     {
+        update_game_region();
         update_game_state();
         update_bar_state();
         if (currentState != Running)
@@ -356,6 +492,17 @@ void init_blockList()
     return;
 }
 
+void init_Ball()
+{
+    //TODO: Fix start values if they are not nice
+    ball.pos_x = width/2;
+    ball.pos_y = 100;
+    ball.degree = 270;
+    ball.r_vector = cos(ball.degree) * ball.pos_x + sin(ball.degree) * ball.pos_y;
+    ball.color = black;
+
+}
+
 void delay(volatile unsigned int count) {
     while (count--) {
         // Busy-wait loop to consume time
@@ -366,6 +513,7 @@ int main(int argc, char *argv[])
 {
     //ClearScreen();
     // HINT: This loop allows the user to restart the game after loosing/winning the previous game
+    init_Ball();
     init_blockList();
     //Init Bar Position
     BarPosition = 98;
