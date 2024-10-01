@@ -10,7 +10,7 @@ unsigned int __attribute__((used)) black = 0x0;
 unsigned short light_blue = 0x07FF;  // Light blue in RGB565 (5 bits for red, 6 for green, 5 for blue)
 
 unsigned short orange = 0xFD20;  // A common 16-bit value for orange
-
+//TODO: Check if n_cols is correct
 unsigned char n_cols = 10; // <- This variable might change depending on the size of the game. Supported value range: [1,18]
 
 char *won = "You Won";       // DON'T TOUCH THIS - keep the string as is
@@ -33,8 +33,13 @@ const unsigned int checkRange = 30; //TODO: Change to size / speed or smth
 #define BLOCK_HIT_CHECK_RANGE  (width - n_cols * block_width - checkRange)
 #define WALL_HIT_CHECK_RANGE_MIN checkRange
 #define WALL_HIT_CHECK_RANGE_MAX (height - checkRange)
-#define number_of_x_blocks (int)(320 / 15) //this dont make sense
+#define number_of_x_blocks (int)(320 / 15)
 #define number_of_y_blocks (int)(240 / 15)
+#define STARR_POSITION_BAR (int)(height / 2 - 45 / 2)
+#define WallHitMin 10
+#define WallHitMax height - 10
+//MACRO to get PI
+#define M_PI acos(-1.0)
 /***
  * You might use and modify the struct/enum definitions below this comment
  */
@@ -64,7 +69,7 @@ typedef struct _ball
 {
     unsigned int pos_x;
     unsigned int pos_y;
-    unsigned int degree;
+    double degree;
     unsigned int r_vector;
     unsigned int color;
 } BallBlock;
@@ -96,7 +101,6 @@ GameRegion currentRegion = NotClose;
  * Here follow the C declarations for our assembly functions
  */
 
-// TODO: Add a C declaration for the ClearScreen assembly procedure
 void SetPixel(unsigned int x_coord, unsigned int y_coord, unsigned int color);
 void DrawBlock(unsigned int x, unsigned int y, unsigned int width, unsigned int height, unsigned int color);
 void DrawBar(unsigned int y);
@@ -112,7 +116,6 @@ void ClearScreen();
 asm("ClearScreen: \n\t"
     "    PUSH {LR} \n\t" //Saves the link register(The LR (Link Register) holds the return address when a function call (BL, BLX) is made.)
     "    PUSH {R4, R5} \n\t" //I dont get why we do this seems useless to me
-    // TODO: Add ClearScreen implementation in assembly here
     "    LDR R2, =0x0000FFFF \n\t"  // Move the hexadecimal value 0x0000FFFF into register R2
     "    MOV R4, #0 \n\t" //intit x at 0
     "    MOV R5, #0 \n\t" //init y at 0
@@ -149,9 +152,7 @@ asm("SetPixel: \n\t"
     "STRH R2, [R10,R7] \n\t"
     "MOV R15, R14");
 
-// TODO: Implement the DrawBlock function in assembly. You need to accept 5 parameters, as outlined in the c declaration above (unsigned int x, unsigned int y, unsigned int width, unsigned int height, unsigned int color)
 asm("DrawBlock: \n\t"
-    // TODO: Here goes your implementation
  // Save LR and relevant registers
     "   PUSH {LR, R2, R3, R4, R5, R6, R7, R8, R9} \n\t"
     // Load color (5th argument) from the stack
@@ -187,7 +188,6 @@ asm("DrawBlock: \n\t"
     "   POP {LR, R2, R3, R4, R5, R6, R7, R8, R9} \n\t"
     "   BX LR");
 
-// TODO: Impelement the DrawBar function in assembly. You need to accept the parameter as outlined in the c declaration above (unsigned int y)
 asm("DrawBar: \n\t"
     " PUSH {LR,R2,R3,R4,R5,R6,R7,R8} \n\t" 
     //The bar is 7 x 45 pixels 
@@ -233,7 +233,14 @@ asm("ReadUart:\n\t"
     "BX LR");
 
 // TODO: Add the WriteUart assembly procedure here that respects the WriteUart C declaration on line 46
-
+asm("WriteUart: \n\t"
+    "LDR R1, =0xFF201000 \n\t"
+    "CMP R0, #0 \n\t" //Check if we have reaced the end of the string
+    "BEQ EndWriteUart \n\t"
+    "STR R0, [R1] \n\t"
+    "EndWriteUart: \n\t"
+    "BX LR \n\t"
+    );
 // TODO: Implement the C functions below
 void draw_ball()
 {
@@ -303,16 +310,19 @@ void update_game_state()
     if (ball.pos_x == width)
     {
         currentState = Won; 
+        return;
     }
-    if(ball.pos_x == 0)
+    if(ball.pos_x <= 5)
     {
         currentState = Lost;
+        return;
     }
-    // TODO: Update balls position and direction
-    double radians = ball.degree * (3.14) / 180.0;
+
+    //Update balls position and direction
+    double radians = ball.degree * (M_PI) / 180.0;
     ball.pos_x += ball_speed * sin(radians);
-    ball.pos_y += ball_speed * cos(radians);
-    // TODO: Hit Check with Blocks
+    ball.pos_y -= ball_speed * cos(radians);//TODO:Think this is correct
+    // Hit Check with Blocks
     // HINT: try to only do this check when we potentially have a hit, as it is relatively expensive and can slow down game play a lot
     //Only check when we are in a region where a hit can happen
     switch (currentRegion)
@@ -323,57 +333,162 @@ void update_game_state()
         break;
     case CloseToBlocks:
         //Check if we have hit Block
+        check_if_blockHit();
+        break;
     case CloseToWall:
         //Check if we have hit wall
+        check_if_wallHit();
+        break;
     case CloseToWallAndBar:
         //Check if we have hit Wall or Bar
+        check_if_barHit();
+        check_if_wallHit();
+        break;
     case CloseToWallAndBlock:
         //Check if we have hit Wall or block.
+        check_if_blockHit();
+        check_if_wallHit();
     default:
         break;
     }
     return;
-    
 }
 
-void check_if_barHit()
+void check_if_wallHit()
 {
-    //TODO: Maybe not define here IDK 
-    HitBox barHitBox;
-    barHitBox.x_max = 15;
-    barHitBox.x_min = 0;
-    barHitBox.y_max = BarPosition;
-    barHitBox.y_min = BarPosition + 45;
     //HitBoxBall
     HitBox ballHitBox;
     ballHitBox.x_max = ball.pos_x + 7;
     ballHitBox.x_min = ball.pos_x;
     ballHitBox.y_min = ball.pos_y;
     ballHitBox.y_max = ball.pos_y + 7;
-    //Start simple if you hit bar we will just bounce it back   
-
-    //Chatty code
-    //TODO : Fix so that we also check Y position
-    /*
-    if((ballHitBox.x_min <= barHitBox.x_max && ballHitBox.y_max >= barHitBox.y_min) ||
-      (ballHitBox.x_min <= barHitBox.x_max && ballHitBox.y_min >= barHitBox.y_max))
-      {
-        ball.degree = 90;
-      }
-    */
-     if(ballHitBox.x_min <= barHitBox.x_max)
-      {
-        ball.degree = 90;
-      }
-    return;
+    if(ballHitBox.y_min <= WallHitMin || ballHitBox.y_max >= WallHitMax)
+    {
+        //We have hit a wall
+        //TODO:Change degree to be more dynamic
+        if(ball.degree <= 180) ball.degree = 180 - ball.degree;
+        else if(ball.degree > 180)ball.degree = 540 - ball.degree;
+    }
 }
 
+void check_if_barHit()
+{
+    // We have 3 sections for the bar and each should have a different bounce angle
+    HitBox barLowerHitBox;  // This is actually at the top of the bar in this coordinate system
+    barLowerHitBox.x_max = 15;
+    barLowerHitBox.x_min = 0;
+    barLowerHitBox.y_max = BarPosition + 15;
+    barLowerHitBox.y_min = BarPosition; // Lower section is at the top in screen coordinates
+
+    HitBox barCentralHitBox;
+    barCentralHitBox.x_max = 15;
+    barCentralHitBox.x_min = 0;
+    barCentralHitBox.y_max = BarPosition + 30;
+    barCentralHitBox.y_min = BarPosition + 15; // Central section is below the lower section
+
+    HitBox barUpperHitBox;  // This is at the bottom of the bar
+    barUpperHitBox.x_max = 15;
+    barUpperHitBox.x_min = 0;
+    barUpperHitBox.y_max = BarPosition + 45;
+    barUpperHitBox.y_min = BarPosition + 30; // Upper section is at the bottom
+
+    // HitBox for the ball
+    HitBox ballHitBox;
+    ballHitBox.x_max = ball.pos_x + 7;
+    ballHitBox.x_min = ball.pos_x;
+    ballHitBox.y_min = ball.pos_y;
+    ballHitBox.y_max = ball.pos_y + 7;
+
+    // Start simple: if you hit the bar, bounce it back at a dynamic angle
+    if (ballHitBox.x_min <= barLowerHitBox.x_max && barLowerHitBox.y_min <= ballHitBox.y_max && ballHitBox.y_min <= barLowerHitBox.y_max)
+    {
+        ball.degree = 45; // Lower section hit (which is at the top in screen coordinates)
+    }
+    else if (ballHitBox.x_min <= barCentralHitBox.x_max && barCentralHitBox.y_min <= ballHitBox.y_max && ballHitBox.y_min <= barCentralHitBox.y_max)
+    {
+        ball.degree = 90; // Central section hit
+    }
+    else if (ballHitBox.x_min <= barUpperHitBox.x_max && barUpperHitBox.y_min <= ballHitBox.y_max && ballHitBox.y_min <= barUpperHitBox.y_max)
+    {
+        ball.degree = 135; // Upper section hit (which is at the bottom in screen coordinates)
+    }
+    return;
+}
+void check_if_blockHit()
+{
+    //HitBoxBall
+    HitBox ballHitBox;
+    ballHitBox.x_max = ball.pos_x + 7;
+    ballHitBox.x_min = ball.pos_x;
+    ballHitBox.y_min = ball.pos_y;
+    ballHitBox.y_max = ball.pos_y + 7;  
+    for (int x = number_of_x_blocks - n_cols; x < number_of_x_blocks; x++)
+    {
+        for (int y = 0; y < number_of_y_blocks; y++)
+        {
+            if (blocksList[x][y].destroyed == 0)
+            {
+                HitBox blockHitBox;
+                blockHitBox.x_max = blocksList[x][y].pos_x + block_width;
+                blockHitBox.x_min = blocksList[x][y].pos_x;
+                blockHitBox.y_min = blocksList[x][y].pos_y;
+                blockHitBox.y_max = blocksList[x][y].pos_y + block_height;
+
+                //Check if hit above
+                if(ballHitBox.y_max >= blockHitBox.y_min &&ballHitBox.y_min < blockHitBox.y_min && ballHitBox.x_max >= blockHitBox.x_min && ballHitBox.x_min <= blockHitBox.x_max)
+                {
+                    //We have hit a block from below
+                    blocksList[x][y].destroyed = 1;
+                    //Change direction of ball
+                    if (ball.degree == 135) ball.degree = 45;
+                    else if(ball.degree == 225) ball.degree = 135;
+                    else
+                    {
+                        //ERROR SHOULD NEVER GET THIS
+                        ball.degree =  270;
+                    }
+                    return;
+                }
+                //Check if hit from front
+                if(ballHitBox.x_max >= blockHitBox.x_min && blockHitBox.y_min <= ballHitBox.y_max && ballHitBox.y_min <= blockHitBox.y_max)
+                {
+                    //We have hit a block
+                    blocksList[x][y].destroyed = 1;
+                    //Change direction of ball 
+                    if (ball.degree == 45) ball.degree = 315;
+                    else if(ball.degree == 135) ball.degree = 225;
+                    else if(ball.degree == 90) ball.degree = 270;
+                    else
+                    {
+                        //ERROR SHOULD NEVER GET THIS
+                        ball.degree =  270;
+                    }
+                    return;
+                }
+                //Check if hit from below
+                if(ballHitBox.y_min <= blockHitBox.y_max && ballHitBox.y_max > blockHitBox.y_max && ballHitBox.x_max >= blockHitBox.x_min && ballHitBox.x_min <= blockHitBox.x_max)
+                {
+                    //We have hit a block from above
+                    blocksList[x][y].destroyed = 1;
+                    //Change direction of ball
+                    if (ball.degree == 45) ball.degree = 135;
+                    else if(ball.degree == 315) ball.degree = 225;
+                    else
+                    {
+                        //ERROR SHOULD NEVER GET THIS
+                        ball.degree =  270;
+                    }
+                    return;
+                }
+            }
+        }
+    } 
+}
 void update_bar_state()
 {
     int remaining = 0;
     int reedValue = 0;
-    // TODO: Read all chars in the UART Buffer and apply the respective bar position updates
-        // Hint: This is draining the UART buffer
+    // Hint: This is draining the UART buffer
     do
     {
         unsigned long long out = ReadUart();
@@ -386,13 +501,15 @@ void update_bar_state()
         reedValue = (out & 0x000000FF);
         if (reedValue == 0x00000077)
         {
-            //GoUp //TODO: Need to check if we are over max height 
-            BarPosition -= 15;
+            //GoUp 
+            if(BarPosition > 45) BarPosition -= 15;
+            else BarPosition = 0;
         }
         if (reedValue == 0x00000073)
         {
             //Go down
-            BarPosition += 15;
+            if(BarPosition < height - 45 - 15) BarPosition += 15;
+            else BarPosition = height - 45;
         }
     } while (remaining > 0);
 
@@ -403,13 +520,18 @@ void update_bar_state()
 
 void write(char *str)
 {
-    // TODO: Use WriteUart to write the string to JTAG UART
+    for(*str; *str != '\0'; str++)
+    {
+        WriteUart(*str);
+    }
+    // HINT: You can use the WriteUart function to write a single character to the UART
+
 }
 
 void play()
 {
     // HINT: This is the main game loop
-    ClearScreen();
+    // ClearScreen();
     while (1)
     {
         update_game_region();
@@ -421,8 +543,8 @@ void play()
         }
         draw_playing_field();
         draw_ball();
-        DrawBar(BarPosition); // TODO: replace the constant value with the current position of the bar
-        delay(2000000); // Insert delay here (500ms for observation purposes)
+        DrawBar(BarPosition); 
+        delay(200000); // Insert delay so that its a bit easier on the eyes
         ClearScreen();
     }
     if (currentState == Won)
@@ -443,6 +565,8 @@ void play()
 void reset()
 {
     // Hint: This is draining the UART buffer
+
+    //TODO:THIS DOES NOT ALWAYS WORK FOR SOME REASON
     int remaining = 0;
     do
     {
@@ -453,14 +577,42 @@ void reset()
             return;
         }
         remaining = (out & 0xFF0000) >> 4;
-    } while (remaining > 0);
-
+        if ( (out & 0x000000FF) == 0x00000077 || (out & 0x000000FF) == 0x00000073)
+        {
+            //We have a new game
+            currentState = Running;
+            break;
+        }
+        //If we entered space we should exit THIS DOES NOT WORK IDK WHY
+        if((out & 0x000000FF) == 0x0000000a)
+        {
+            char *str = "Exit Game";
+            write(str);
+            currentState = Exit;
+            break;
+        }
+    } while (currentState != Running);
+    char *str = "New Game LETS GO";
+    write(str);
     // TODO: You might want to reset other state in here
+    //Reset game for next run
+    init_Ball();
+    init_blockList();
+    //Init Bar Position
+    BarPosition = STARR_POSITION_BAR; //Start in middle of all positions
 }
 
 void wait_for_start()
 {
-    // TODO: Implement waiting behaviour until the user presses either w/s
+    unsigned long long out = 0;
+    do
+    {
+        //Wait for input
+        out = ReadUart();
+        out = out & 0x000000FF;
+        //Maybe write somethign IDK
+    }while(out != 0x00000077 && out != 0x00000073);
+    
 }
 
 void init_blockList()
@@ -516,7 +668,7 @@ int main(int argc, char *argv[])
     init_Ball();
     init_blockList();
     //Init Bar Position
-    BarPosition = 98;
+    BarPosition = STARR_POSITION_BAR; //Start in middle of all positions
     while (1)
     {
         //Under follows real code LOL
