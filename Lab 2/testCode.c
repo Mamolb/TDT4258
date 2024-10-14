@@ -49,8 +49,8 @@ typedef struct _block
 {
     unsigned char destroyed;
     unsigned char deleted;
-    unsigned int pos_x;
-    unsigned int pos_y;
+    int pos_x;
+    int pos_y;
     unsigned int color;
 } Block;
 
@@ -69,9 +69,10 @@ typedef struct _ball
 {
     unsigned int pos_x;
     unsigned int pos_y;
-    double degree;
-    int vel_x;
-    int vel_y;
+    float degree;
+    float radian;
+    unsigned int velocity_x;
+    unsigned int velocity_y;
     unsigned int color;
 } BallBlock;
 
@@ -92,25 +93,12 @@ typedef enum _gameregion
     CloseToWallAndBlock,
     NotClose,
 }GameRegion;
-
-typedef enum _direction
-{
-    HorizontalRight = 1,
-    HorizontalLeft = 2,
-    VerticalUp = 3,
-    VerticalDown = 4,
-    DiagonalUpRight = 5,
-    DiagonalUpLeft = 6,
-    DiagonalDownRight = 7,
-    DiagonalDownLeft = 8,
-}Direction;
 //Globals that represent the gamepicture
 //2D array of blocks //Think we should have this in main instead
 Block blocksList[10][number_of_y_blocks]; //This takes some mem but it is the easiest way to keep track of the blocks
 int BarPosition = 0;
 BallBlock ball;
 GameRegion currentRegion = NotClose;
-Direction currentDirection = HorizontalLeft;
 /***
  * Here follow the C declarations for our assembly functions
  */
@@ -158,13 +146,15 @@ asm("ClearScreen: \n\t"
 
 // assumes R0 = x-coord, R1 = y-coord, R2 = colorvalue
 asm("SetPixel: \n\t"
+    "PUSH {LR,R10,R7,R8,R2} \n\t"
     "LDR R10, =VGAaddress \n\t"
     "LDR R10, [R10] \n\t"
     "LSL R7, R1, #10 \n\t" //Changed to R7 Y position
     "LSL R8, R0, #1 \n\t"  //Changed to R8 X position
     "ADD R7, R8 \n\t"
     "STRH R2, [R10,R7] \n\t"
-    "MOV R15, R14");
+    "POP {LR,R10,R7,R8,R2} \n\t"
+    "BX LR");
 
 asm("DrawBlock: \n\t"
  // Save LR and relevant registers
@@ -242,70 +232,24 @@ asm("DrawBar: \n\t"
     "BX LR \n\t");
 
 asm("ReadUart:\n\t"
+    "PUSH {LR} \n\t"
     "LDR R1, =0xFF201000 \n\t"
     "LDR R0, [R1]\n\t"
+    "POP {LR} \n\t"
     "BX LR");
 
 // TODO: Add the WriteUart assembly procedure here that respects the WriteUart C declaration on line 46
 asm("WriteUart: \n\t"
+     "PUSH {LR} \n\t"
     "LDR R1, =0xFF201000 \n\t"
     "CMP R0, #0 \n\t" //Check if we have reaced the end of the string
     "BEQ EndWriteUart \n\t"
     "STR R0, [R1] \n\t"
     "EndWriteUart: \n\t"
+    "POP {LR} \n\t"
     "BX LR \n\t"
     );
 // TODO: Implement the C functions below
-void update_velocity() //TODO:FIX THIS SO THAT MAX VELOCITY IS 1.4 OFF BALLSPEED AS IN COS AND SIN
-{
-    //printf("Start off update velocity is at: %d\n", ball.vel_x);
-    //printf("Start off update velocity is at: %d\n", ball.vel_y);
-    //Update velocity of ball
-    if (currentDirection == HorizontalRight)
-    {
-        ball.vel_x = ball_speed;
-        ball.vel_y = 0;
-    }
-    else if(currentDirection == HorizontalLeft)
-    {
-        ball.vel_x = -ball_speed;
-        ball.vel_y = 0;
-    }
-    else if(currentDirection == VerticalUp)
-    {
-        ball.vel_x = 0;
-        ball.vel_y = -ball_speed;
-    }
-    else if(currentDirection == VerticalDown)
-    {
-        ball.vel_x = 0;
-        ball.vel_y = ball_speed;
-    }
-    else if(currentDirection == DiagonalUpRight)
-    {
-        //Sqrt(2) = 0.707
-        ball.vel_x = ball_speed * 0.707;
-        ball.vel_y = -ball_speed * 0.707;
-    }
-    else if(currentDirection == DiagonalUpLeft)
-    {
-        ball.vel_x = -ball_speed * 0.707;
-        ball.vel_y = -ball_speed * 0.707;
-    }
-    else if(currentDirection == DiagonalDownRight)
-    {
-        ball.vel_x = ball_speed * 0.707;
-        ball.vel_y = ball_speed * 0.707;
-        return;
-    }
-    else if(currentDirection == DiagonalDownLeft)
-    {
-        ball.vel_x = -ball_speed * 0.707;
-        ball.vel_y = ball_speed * 0.707;
-    }
-    return;
-    
-}
 void draw_ball()
 {
     DrawBlock(ball.pos_x, ball.pos_y, ball_width, ball_height, ball.color );
@@ -365,61 +309,91 @@ void update_game_region()
 
 void update_game_state()
 {
-    if (currentState != Running)
-    {
-        return;
-    }
+    // if (currentState != Running)
+    // {
+    //     return;
+    // }
 
-    // TODO: Check: game won? game lost?
-    if (ball.pos_x <= width)
-    {
-        currentState = Won; 
-        return;
-    }
-    if(ball.pos_x <= 5)
-    {
-        currentState = Lost;
-        return;
-    }
+    // // TODO: Check: game won? game lost?
+    // if (ball.pos_x == width)
+    // {
+    //     currentState = Won; 
+    //     return;
+    // }
+    // if(ball.pos_x <= 5)
+    // {
+    //     currentState = Lost;
+    //     return;
+    // }
 
     //Update balls position and direction
-    // double radians = ball.degree * (M_PI) / 180.0;
-    // ball.pos_x += ball_speed * sin(radians);
-    // ball.pos_y -= ball_speed * cos(radians);//TODO:Think this is correct
+    // double ball_radians = ball.degree * (M_PI / 180.0);
+    // unsigned int lol = ball.degree; //SEEMS LIKE THIS IS THE WRONG VALUE???
+    // ball.degree = 270; // Works with this seems like the value ís overwritten or smth after init
+    // float new_radian = sin(ball.degree*M_PI/180.0);
+    // unsigned int new_new_radian = (unsigned int)new_radian;
+    // ball.pos_x += (unsigned int)(new_new_radian * ball_speed);
+
+    // ball.pos_x += ball_speed * sin(270.0 * (3.14 / 180.0));//This works
+
+    // ball.pos_x += ball_speed * sin(ball.degree * (3.14 / 180.0)); //This does not work ball.degree is 270.0
+
+    // float lel = ball.degree * (3.14 / 180.0);
+    // ball.pos_x = ball.pos_x + ball_speed * sin(lel);//This does also not work
+
+    // printf("Degree: %f\n", ball.degree);
+    //ball.pos_x += ball_speed * sin(ball.degree); //This does not work
+    
+    // ball.degree = 270.0;
+    // ball.pos_x += ball_speed * sin(ball.degree * (3.14 / 180.0)); //This works
+    // float degree = ball.degree;
+    // printf("ball.degree: %f\n", degree);
+    // float lel = (degree * (3.14 / 180.0));
+    // printf("lel: %f\n", lel);
+    // float sine_val = sin(lel);
+    // printf("sin(lel): %f\n", sine_val);
+    // float multiplied_val = sine_val * (float)ball_speed; //This value seems to be correct
+    // printf("multiplied_val: %f\n", multiplied_val);
+    // int int_val = (int)multiplied_val;
+    // printf("int_val: %d\n", int_val);
+    // ball.pos_x += (int)((float)ball_speed * sine_val);
+    // printf("ball.velocity_x: %d\n", ball.velocity_x);
+    // printf("ball.velocity_y: %d\n", ball.velocity_y);
+    // ball.pos_x += ball.velocity_x;
+    // ball.pos_y -= ball.velocity_y;
+    double radians = ((ball.degree * (3.14))/180.0);
+    // ball.pos_x += ball_speed * sin(ball.degree); //FORSOME STRANGE REASON THIS DOES WORK
+    ball.pos_x += ball_speed * sin(radians); //AND NOT THIS???
+    ball.pos_y -= ball_speed * cos(radians);//TODO:Think this is correct
     // Hit Check with Blocks
-    ball.pos_x += ball.vel_x;
-    ball.pos_y += ball.vel_y;
     // HINT: try to only do this check when we potentially have a hit, as it is relatively expensive and can slow down game play a lot
     //Only check when we are in a region where a hit can happen
-    switch (currentRegion)
-    {
-    case CloseToBar:
-        //Check If we have hit bar
-        check_if_barHit();
-        break;
-    case CloseToBlocks:
-        //Check if we have hit Block
-        check_if_blockHit(); // Make sure it does not destroy 2 blocks at once
-        break;
-    case CloseToWall:
-        //Check if we have hit wall
-        printf("Close to wall\n"); // TODO: Think I am in the wrong case sometimes check
-        check_if_wallHit(); //TODO: This does not work for down wall
-        break;
-    case CloseToWallAndBar:
-        //Check if we have hit Wall or Bar
-        // printf("Close to wall and bar\n");
-        check_if_barHit();
-        check_if_wallHit();
-        break;
-    case CloseToWallAndBlock:
-        //Check if we have hit Wall or block.
-        // printf("Close to wall and block\n");
-        check_if_blockHit();
-        check_if_wallHit();
-    default:
-        break;
-    }
+    // switch (currentRegion)
+    // {
+    // // case CloseToBar:
+    // //     //Check If we have hit bar
+    // //     check_if_barHit();
+    // //     break;
+    // // case CloseToBlocks:
+    // //     //Check if we have hit Block
+    // //     check_if_blockHit();
+    // //     break;
+    // // case CloseToWall:
+    // //     //Check if we have hit wall
+    // //     check_if_wallHit();
+    // //     break;
+    // // case CloseToWallAndBar:
+    // //     //Check if we have hit Wall or Bar
+    // //     check_if_barHit();
+    // //     check_if_wallHit();
+    // //     break;
+    // // case CloseToWallAndBlock:
+    // //     //Check if we have hit Wall or block.
+    // //     check_if_blockHit();
+    // //     check_if_wallHit();
+    // default:
+    //     break;
+    // }
     return;
 }
 
@@ -437,14 +411,6 @@ void check_if_wallHit()
         //TODO:Change degree to be more dynamic
         if(ball.degree <= 180) ball.degree = 180 - ball.degree;
         else if(ball.degree > 180)ball.degree = 540 - ball.degree;
-        // printf("Degree after wall: %f\n", ball.degree);
-        //Switch direction
-        if(ball.degree == 45) currentDirection = DiagonalUpRight;
-        else if(ball.degree == 135) currentDirection = DiagonalDownRight;
-        else if(ball.degree == 225) currentDirection = DiagonalDownLeft;
-        else if(ball.degree == 315) currentDirection = DiagonalUpLeft;
-        // printf("Direction after wall: %d\n", currentDirection);
-        update_velocity();
     }
 }
 
@@ -480,19 +446,15 @@ void check_if_barHit()
     if (ballHitBox.x_min <= barLowerHitBox.x_max && barLowerHitBox.y_min <= ballHitBox.y_max && ballHitBox.y_min <= barLowerHitBox.y_max)
     {
         ball.degree = 45; // Lower section hit (which is at the top in screen coordinates)
-        currentDirection = DiagonalUpRight;
     }
     else if (ballHitBox.x_min <= barCentralHitBox.x_max && barCentralHitBox.y_min <= ballHitBox.y_max && ballHitBox.y_min <= barCentralHitBox.y_max)
     {
         ball.degree = 90; // Central section hit
-        currentDirection = HorizontalRight;
     }
     else if (ballHitBox.x_min <= barUpperHitBox.x_max && barUpperHitBox.y_min <= ballHitBox.y_max && ballHitBox.y_min <= barUpperHitBox.y_max)
     {
         ball.degree = 135; // Upper section hit (which is at the bottom in screen coordinates)
-        currentDirection = DiagonalDownRight;
     }
-    update_velocity();
     return;
 }
 void check_if_blockHit()
@@ -521,81 +483,44 @@ void check_if_blockHit()
                     //We have hit a block from below
                     blocksList[x][y].destroyed = 1;
                     //Change direction of ball
-                    if (ball.degree == 135) 
-                    {
-                        ball.degree = 45;
-                        currentDirection = DiagonalUpRight;
-                    }
-                    else if(ball.degree == 225)
-                    {
-                        ball.degree = 135;
-                        currentDirection = DiagonalDownRight;
-                    }
+                    if (ball.degree == 135) ball.degree = 45;
+                    else if(ball.degree == 225) ball.degree = 135;
                     else
                     {
                         //ERROR SHOULD NEVER GET THIS
                         ball.degree =  270;
-                        currentDirection = HorizontalLeft;
                     }
-                    update_velocity();
                     return;
                 }
                 //Check if hit from front
-                else if(ballHitBox.x_max >= blockHitBox.x_min && blockHitBox.y_min <= ballHitBox.y_max && ballHitBox.y_min <= blockHitBox.y_max)
+                if(ballHitBox.x_max >= blockHitBox.x_min && blockHitBox.y_min <= ballHitBox.y_max && ballHitBox.y_min <= blockHitBox.y_max)
                 {
-                    // printf("Hit from front\n");
                     //We have hit a block
                     blocksList[x][y].destroyed = 1;
                     //Change direction of ball 
-                    if (ball.degree == 45) 
-                    {
-                        ball.degree = 315;
-                        currentDirection = DiagonalUpLeft;
-                    }
-                    else if(ball.degree == 135)
-                    {
-                        ball.degree = 225;
-                        currentDirection = DiagonalDownRight;
-                    }
-                    else if(ball.degree == 90) 
-                    {
-                        ball.degree = 270;
-                        currentDirection = HorizontalLeft;
-                        
-                    }
+                    if (ball.degree == 45) ball.degree = 315;
+                    else if(ball.degree == 135) ball.degree = 225;
+                    else if(ball.degree == 90) ball.degree = 270;
                     else
                     {
                         //ERROR SHOULD NEVER GET THIS
-                        //printf("ERROR: Should never get this\n");
                         ball.degree =  270;
-                        currentDirection = HorizontalLeft;
                     }
-                    update_velocity();
                     return;
                 }
                 //Check if hit from below
-                else if(ballHitBox.y_min <= blockHitBox.y_max && ballHitBox.y_max > blockHitBox.y_max && ballHitBox.x_max >= blockHitBox.x_min && ballHitBox.x_min <= blockHitBox.x_max)
+                if(ballHitBox.y_min <= blockHitBox.y_max && ballHitBox.y_max > blockHitBox.y_max && ballHitBox.x_max >= blockHitBox.x_min && ballHitBox.x_min <= blockHitBox.x_max)
                 {
                     //We have hit a block from above
                     blocksList[x][y].destroyed = 1;
                     //Change direction of ball
-                    if (ball.degree == 45) 
-                    {
-                        ball.degree = 135;
-                        currentDirection = DiagonalDownRight;
-                    }
-                    else if(ball.degree == 315)
-                     {
-                        ball.degree = 225;
-                        currentDirection = DiagonalDownLeft;
-                    }
+                    if (ball.degree == 45) ball.degree = 135;
+                    else if(ball.degree == 315) ball.degree = 225;
                     else
                     {
                         //ERROR SHOULD NEVER GET THIS
                         ball.degree =  270;
-                        currentDirection = HorizontalLeft;
                     }
-                    update_velocity();
                     return;
                 }
             }
@@ -649,35 +574,35 @@ void write(char *str)
 void play()
 {
     // HINT: This is the main game loop
-    // ClearScreen();
+    //ClearScreen();
     while (1)
     {
-        update_game_region();
+        //update_game_region();
         update_game_state();
-        update_bar_state();
-        if (currentState != Running)
-        {
-            break;
-        }
-        draw_playing_field();
-        draw_ball();
-        DrawBar(BarPosition); 
-        delay(200000); // Insert delay so that its a bit easier on the eyes
-        ClearScreen();
+        //update_bar_state();
+        // if (currentState != Running)
+        // {
+        //     break;
+        // }
+        // draw_playing_field();
+        // draw_ball();
+        // DrawBar(BarPosition); 
+        // delay(200000); // Insert delay so that its a bit easier on the eyes
+        // ClearScreen();
     }
-    if (currentState == Won)
-    {
-        write(won);
-    }
-    else if (currentState == Lost)
-    {
-        write(lost);
-    }
-    else if (currentState == Exit)
-    {
-        return;
-    }
-    currentState = Stopped;
+    // if (currentState == Won)
+    // {
+    //     write(won);
+    // }
+    // else if (currentState == Lost)
+    // {
+    //     write(lost);
+    // }
+    // else if (currentState == Exit)
+    // {
+    //     return;
+    // }
+    // currentState = Stopped;
 }
 
 void reset()
@@ -765,12 +690,9 @@ void init_blockList()
 void init_Ball()
 {
     //TODO: Fix start values if they are not nice
-    ball.pos_x = width/2;
+    ball.pos_x = width/4;
     ball.pos_y = 100;
-    ball.degree = 270;
-    //Some start values for the ball
-    ball.vel_x = -5;
-    ball.vel_y = 0;
+    ball.degree = 270.0;
     ball.color = black;
 
 }
@@ -783,22 +705,22 @@ void delay(volatile unsigned int count) {
 
 int main(int argc, char *argv[])
 {
-    //ClearScreen();
+    ClearScreen();
     // HINT: This loop allows the user to restart the game after loosing/winning the previous game
     init_Ball();
-    init_blockList();
+    //init_blockList();
     //Init Bar Position
     BarPosition = STARR_POSITION_BAR; //Start in middle of all positions
     while (1)
     {
         //Under follows real code LOL
-        wait_for_start();
+        //wait_for_start();
         play();
-        reset();
-        if (currentState == Exit)
-        {
-            break;
-        }
+        // reset();
+        // if (currentState == Exit)
+        // {
+        //     break;
+        // }
     }
     return 0;
 }
