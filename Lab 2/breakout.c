@@ -28,7 +28,7 @@ const int ball_height = 7;
 const int ball_width = 7;
 const int ball_speed = 10;
 
-const unsigned int checkRange = 30; //TODO: Change to size / speed or smth 
+const unsigned int checkRange = 30; 
 #define BAR_HIT_CHECK_RANGE checkRange
 #define BLOCK_HIT_CHECK_RANGE  (width - n_cols * block_width - checkRange)
 #define WALL_HIT_CHECK_RANGE_MIN checkRange
@@ -38,8 +38,6 @@ const unsigned int checkRange = 30; //TODO: Change to size / speed or smth
 #define STARR_POSITION_BAR (int)(height / 2 - 45 / 2)
 #define WallHitMin 10
 #define WallHitMax height - 10
-//MACRO to get PI
-#define M_PI acos(-1.0)
 /***
  * You might use and modify the struct/enum definitions below this comment
  */
@@ -256,7 +254,7 @@ asm("WriteUart: \n\t"
     "BX LR \n\t"
     );
 // TODO: Implement the C functions below
-void update_velocity() //TODO:FIX THIS SO THAT MAX VELOCITY IS 1.4 OFF BALLSPEED AS IN COS AND SIN
+void update_velocity()
 {
     //printf("Start off update velocity is at: %d\n", ball.vel_x);
     //printf("Start off update velocity is at: %d\n", ball.vel_y);
@@ -313,7 +311,7 @@ void draw_ball()
 //Draw blocks I guess 
 void draw_playing_field()
 {
-    for (int x = number_of_x_blocks - n_cols; x < number_of_x_blocks; x++)
+    for (int x = 0; x < n_cols; x++)
     {
         for (int y = 0; y < number_of_y_blocks; y++)
         {
@@ -369,9 +367,7 @@ void update_game_state()
     {
         return;
     }
-
-    // TODO: Check: game won? game lost?
-    if (ball.pos_x <= width)
+    if (ball.pos_x >= width)
     {
         currentState = Won; 
         return;
@@ -383,10 +379,6 @@ void update_game_state()
     }
 
     //Update balls position and direction
-    // double radians = ball.degree * (M_PI) / 180.0;
-    // ball.pos_x += ball_speed * sin(radians);
-    // ball.pos_y -= ball_speed * cos(radians);//TODO:Think this is correct
-    // Hit Check with Blocks
     ball.pos_x += ball.vel_x;
     ball.pos_y += ball.vel_y;
     // HINT: try to only do this check when we potentially have a hit, as it is relatively expensive and can slow down game play a lot
@@ -403,8 +395,7 @@ void update_game_state()
         break;
     case CloseToWall:
         //Check if we have hit wall
-        printf("Close to wall\n"); // TODO: Think I am in the wrong case sometimes check
-        check_if_wallHit(); //TODO: This does not work for down wall
+        check_if_wallHit(); 
         break;
     case CloseToWallAndBar:
         //Check if we have hit Wall or Bar
@@ -434,7 +425,6 @@ void check_if_wallHit()
     if(ballHitBox.y_min <= WallHitMin || ballHitBox.y_max >= WallHitMax)
     {
         //We have hit a wall
-        //TODO:Change degree to be more dynamic
         if(ball.degree <= 180) ball.degree = 180 - ball.degree;
         else if(ball.degree > 180)ball.degree = 540 - ball.degree;
         // printf("Degree after wall: %f\n", ball.degree);
@@ -443,7 +433,6 @@ void check_if_wallHit()
         else if(ball.degree == 135) currentDirection = DiagonalDownRight;
         else if(ball.degree == 225) currentDirection = DiagonalDownLeft;
         else if(ball.degree == 315) currentDirection = DiagonalUpLeft;
-        // printf("Direction after wall: %d\n", currentDirection);
         update_velocity();
     }
 }
@@ -503,7 +492,7 @@ void check_if_blockHit()
     ballHitBox.x_min = ball.pos_x;
     ballHitBox.y_min = ball.pos_y;
     ballHitBox.y_max = ball.pos_y + 7;  
-    for (int x = number_of_x_blocks - n_cols; x < number_of_x_blocks; x++)
+    for (int x = 0; x < n_cols; x++)
     {
         for (int y = 0; y < number_of_y_blocks; y++)
         {
@@ -523,8 +512,8 @@ void check_if_blockHit()
                     //Change direction of ball
                     if (ball.degree == 135) 
                     {
-                        ball.degree = 45;
-                        currentDirection = DiagonalUpRight;
+                        ball.degree = 90;
+                        currentDirection = DiagonalDownLeft;
                     }
                     else if(ball.degree == 225)
                     {
@@ -543,7 +532,6 @@ void check_if_blockHit()
                 //Check if hit from front
                 else if(ballHitBox.x_max >= blockHitBox.x_min && blockHitBox.y_min <= ballHitBox.y_max && ballHitBox.y_min <= blockHitBox.y_max)
                 {
-                    // printf("Hit from front\n");
                     //We have hit a block
                     blocksList[x][y].destroyed = 1;
                     //Change direction of ball 
@@ -566,7 +554,6 @@ void check_if_blockHit()
                     else
                     {
                         //ERROR SHOULD NEVER GET THIS
-                        //printf("ERROR: Should never get this\n");
                         ball.degree =  270;
                         currentDirection = HorizontalLeft;
                     }
@@ -662,7 +649,7 @@ void play()
         draw_playing_field();
         draw_ball();
         DrawBar(BarPosition); 
-        delay(200000); // Insert delay so that its a bit easier on the eyes
+        delay(50000); // Insert delay so that its a bit easier on the eyes
         ClearScreen();
     }
     if (currentState == Won)
@@ -739,12 +726,20 @@ void init_blockList()
     unsigned short colors[] = {blue, red, green, black, orange, light_blue};
     int num_colors = sizeof(colors) / sizeof(colors[0]);
     int color_index = 0;
-    for (int x = number_of_x_blocks - n_cols; x < number_of_x_blocks; x++)
+    int x_endadress = 306;
+    int x_startadress = 306 - (n_cols-1) * block_width;
+    if (!(n_cols <=18 && n_cols >= 1))
+    {
+        write("Invalid number of columns");
+        currentState = Exit;
+    }
+    
+    for (int x = 0; x < n_cols; x++)
     {
         for (int y = 0; y < number_of_y_blocks; y++)
         {
             //Init all blocks with correct values
-            blocksList[x][y].pos_x = x * block_width;    // Set the x position
+            blocksList[x][y].pos_x = x_startadress + (x*block_width);    // Set the x position
             blocksList[x][y].pos_y = y * block_height;   // Set the y position
             blocksList[x][y].deleted = 0;
             blocksList[x][y].destroyed = 0; 
@@ -764,7 +759,6 @@ void init_blockList()
 
 void init_Ball()
 {
-    //TODO: Fix start values if they are not nice
     ball.pos_x = width/2;
     ball.pos_y = 100;
     ball.degree = 270;
